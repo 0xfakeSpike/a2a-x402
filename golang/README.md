@@ -84,7 +84,7 @@ The server requires a configuration file with network settings:
 ### Client Configuration
 
 The client requires a configuration file with network key pairs:
-- `network`: Blockchain network identifier
+- `networkName`: Blockchain network identifier
 - `privateKey`: Private key for signing payment transactions
 
 ## x402 Protocol Version
