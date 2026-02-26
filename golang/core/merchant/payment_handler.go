@@ -119,8 +119,11 @@ func (o *BusinessOrchestrator) handlePaymentSubmitted(
 	}
 
 	if err := o.verifyPayment(ctx, paymentState); err != nil {
-		return nil, o.transitionToFailed(ctx, requestContext, task, eventQueue,
-			fmt.Errorf("payment verification failed: %w", err), "payment_verification_failed")
+		verificationErr := fmt.Errorf("payment verification failed: %w", err)
+		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, verificationErr, "payment_verification_failed"); transitionErr != nil {
+			return nil, fmt.Errorf("failed to transition to failed state: %w", transitionErr)
+		}
+		return nil, verificationErr
 	}
 
 	paymentState.Status = state.PaymentVerified
