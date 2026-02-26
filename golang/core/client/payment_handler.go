@@ -78,7 +78,15 @@ func (c *Client) processPaymentState(
 				if err == nil {
 					return fmt.Errorf("unknown payment state: %s", string(msgJSON))
 				}
+				if task.Status.Message.Parts != nil {
+					for _, part := range task.Status.Message.Parts {
+						if textPart, ok := part.(a2a.TextPart); ok && textPart.Text != "" {
+							return fmt.Errorf("unknown payment state: %s", textPart.Text)
+						}
+					}
+				}
 			}
+			return fmt.Errorf("unknown payment state: %v (task is in working state)", paymentState.Status)
 		}
 		return nil
 	}
