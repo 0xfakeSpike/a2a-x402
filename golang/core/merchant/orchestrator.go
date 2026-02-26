@@ -21,7 +21,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	x402core "github.com/coinbase/x402/go"
 	"github.com/google-agentic-commerce/a2a-x402/core/business"
 	"github.com/google-agentic-commerce/a2a-x402/core/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402"
@@ -29,11 +28,13 @@ import (
 )
 
 type BusinessOrchestrator struct {
-	merchant        *x402core.X402ResourceServer
-	businessService business.BusinessService
-	networkConfigs  []types.NetworkConfig
+	merchant         ResourceServer
+	businessService  business.BusinessService
+	networkConfigs   []types.NetworkConfig
+	extensionChecker ExtensionChecker
 }
 
+// NewBusinessOrchestrator creates a new orchestrator with real dependencies (production use)
 func NewBusinessOrchestrator(
 	ctx context.Context,
 	facilitatorURL string,
@@ -44,11 +45,33 @@ func NewBusinessOrchestrator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create x402 resource server: %w", err)
 	}
+
+	merchant := &resourceServerWrapper{server: resourceServer}
+
 	return &BusinessOrchestrator{
-		merchant:        resourceServer,
-		businessService: businessService,
-		networkConfigs:  networkConfigs,
+		merchant:         merchant,
+		businessService:  businessService,
+		networkConfigs:   networkConfigs,
+		extensionChecker: DefaultExtensionChecker(),
 	}, nil
+}
+
+// NewBusinessOrchestratorWithDeps creates a new orchestrator with dependency injection support (for testing)
+func NewBusinessOrchestratorWithDeps(
+	merchant ResourceServer,
+	businessService business.BusinessService,
+	networkConfigs []types.NetworkConfig,
+	extensionChecker ExtensionChecker,
+) *BusinessOrchestrator {
+	if extensionChecker == nil {
+		extensionChecker = DefaultExtensionChecker()
+	}
+	return &BusinessOrchestrator{
+		merchant:         merchant,
+		businessService:  businessService,
+		networkConfigs:   networkConfigs,
+		extensionChecker: extensionChecker,
+	}
 }
 
 func (o *BusinessOrchestrator) Execute(
@@ -133,11 +156,14 @@ func (o *BusinessOrchestrator) ensureExtension(
 	task *a2a.Task,
 	eventQueue eventqueue.Queue,
 ) error {
-	extensions, ok := a2asrv.ExtensionsFrom(ctx)
+	extensions, ok := o.extensionChecker.ExtensionsFrom(ctx)
 	if !ok {
 		errorMsg := "x402 extension is required but not active. Client must send X-A2A-Extensions header with value: " + x402.X402ExtensionURI
-		return o.transitionToFailed(ctx, requestContext, task, eventQueue,
-			fmt.Errorf("%s", errorMsg), "extension_missing")
+		err := fmt.Errorf("%s", errorMsg)
+		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, err, "extension_missing"); transitionErr != nil {
+			return fmt.Errorf("failed to transition to failed state: %w", transitionErr)
+		}
+		return err
 	}
 
 	x402Extension := &a2a.AgentExtension{
@@ -145,8 +171,11 @@ func (o *BusinessOrchestrator) ensureExtension(
 	}
 	if !extensions.Requested(x402Extension) {
 		errorMsg := "x402 extension is required but not active. Client must send X-A2A-Extensions header with value: " + x402.X402ExtensionURI
-		return o.transitionToFailed(ctx, requestContext, task, eventQueue,
-			fmt.Errorf("%s", errorMsg), "extension_not_requested")
+		err := fmt.Errorf("%s", errorMsg)
+		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, err, "extension_not_requested"); transitionErr != nil {
+			return fmt.Errorf("failed to transition to failed state: %w", transitionErr)
+		}
+		return err
 	}
 
 	return nil

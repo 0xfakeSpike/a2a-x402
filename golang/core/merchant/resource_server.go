@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	x402 "github.com/coinbase/x402/go"
+	x402core "github.com/coinbase/x402/go"
 	x402http "github.com/coinbase/x402/go/http"
 	evm "github.com/coinbase/x402/go/mechanisms/evm/exact/server"
 	svm "github.com/coinbase/x402/go/mechanisms/svm/exact/server"
@@ -58,9 +59,30 @@ func NewResourceServer(ctx context.Context, facilitatorURL string) (*x402.X402Re
 	return server, nil
 }
 
+// resourceServerWrapper wraps *x402.X402ResourceServer to implement ResourceServer
+type resourceServerWrapper struct {
+	server *x402.X402ResourceServer
+}
+
+func (w *resourceServerWrapper) BuildPaymentRequirementsFromConfig(ctx context.Context, config x402.ResourceConfig) ([]x402types.PaymentRequirements, error) {
+	return w.server.BuildPaymentRequirementsFromConfig(ctx, config)
+}
+
+func (w *resourceServerWrapper) FindMatchingRequirements(accepts []x402types.PaymentRequirements, payload x402types.PaymentPayload) *x402types.PaymentRequirements {
+	return w.server.FindMatchingRequirements(accepts, payload)
+}
+
+func (w *resourceServerWrapper) VerifyPayment(ctx context.Context, payload x402types.PaymentPayload, requirements x402types.PaymentRequirements) (*x402core.VerifyResponse, error) {
+	return w.server.VerifyPayment(ctx, payload, requirements)
+}
+
+func (w *resourceServerWrapper) SettlePayment(ctx context.Context, payload x402types.PaymentPayload, requirements x402types.PaymentRequirements) (*x402core.SettleResponse, error) {
+	return w.server.SettlePayment(ctx, payload, requirements)
+}
+
 func BuildPaymentRequirements(
 	ctx context.Context,
-	server *x402.X402ResourceServer,
+	server ResourceServer,
 	networkConfig types.NetworkConfig,
 	params business.ServiceRequirements,
 ) ([]*x402types.PaymentRequirements, error) {
