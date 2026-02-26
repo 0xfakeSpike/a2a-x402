@@ -123,7 +123,11 @@ func (o *BusinessOrchestrator) handlePaymentSubmitted(
 		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, verificationErr, "payment_verification_failed"); transitionErr != nil {
 			return nil, fmt.Errorf("failed to transition to failed state: %w", transitionErr)
 		}
-		return nil, verificationErr
+		// After successfully transitioning the task to failed state, return nil to indicate
+		// the request was handled successfully (by failing the task). This allows the
+		// orchestrator's Execute method to complete without an error, which is consistent
+		// with how other business logic failures are handled.
+		return nil, nil
 	}
 
 	paymentState.Status = state.PaymentVerified
