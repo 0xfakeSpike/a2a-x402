@@ -27,30 +27,127 @@ func TestExtractPaymentStatus(t *testing.T) {
 	tests := []struct {
 		name    string
 		task    *a2a.Task
-		message *a2a.Message
 		want    PaymentStatus
 		wantErr bool
 	}{
 		{
-			name:    "nil task and message",
+			name:    "nil task",
 			task:    nil,
-			message: nil,
 			want:    "",
 			wantErr: false,
 		},
 		{
-			name:    "status from message metadata",
-			task:    nil,
-			message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
+			name: "task without message",
+			task: &a2a.Task{
+				ID:        "task-1",
+				ContextID: "context-1",
+				Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+			},
 			want:    "",
 			wantErr: false,
 		},
-		// Add more test cases with actual metadata
+		{
+			name: "task with message but no payment status",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				return task
+			}(),
+			want:    "",
+			wantErr: false,
+		},
+		{
+			name: "payment-required status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentRequired)
+				return task
+			}(),
+			want:    PaymentRequired,
+			wantErr: false,
+		},
+		{
+			name: "payment-submitted status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentSubmitted)
+				return task
+			}(),
+			want:    PaymentSubmitted,
+			wantErr: false,
+		},
+		{
+			name: "payment-verified status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentVerified)
+				return task
+			}(),
+			want:    PaymentVerified,
+			wantErr: false,
+		},
+		{
+			name: "payment-completed status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentCompleted)
+				return task
+			}(),
+			want:    PaymentCompleted,
+			wantErr: false,
+		},
+		{
+			name: "payment-failed status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateFailed, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentFailed)
+				return task
+			}(),
+			want:    PaymentFailed,
+			wantErr: false,
+		},
+		{
+			name: "payment-rejected status from task",
+			task: func() *a2a.Task {
+				task := &a2a.Task{
+					ID:        "task-1",
+					ContextID: "context-1",
+					Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
+				}
+				SetPaymentStatus(task.Status.Message, PaymentRejected)
+				return task
+			}(),
+			want:    PaymentRejected,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ExtractPaymentStatus(tt.task, tt.message)
+			got, err := ExtractPaymentStatus(tt.task)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ExtractPaymentStatus() error = %v, wantErr %v", err, tt.wantErr)
 				return

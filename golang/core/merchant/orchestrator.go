@@ -109,6 +109,18 @@ func (o *BusinessOrchestrator) Execute(
 		}
 
 		switch paymentState.Status {
+		case state.PaymentRequired:
+			if paymentState.Payload != nil {
+				paymentState.Status = state.PaymentSubmitted
+				var err error
+				paymentState, err = o.handlePaymentSubmitted(ctx, requestContext, task, eventQueue, paymentState)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			return nil
+
 		case state.PaymentSubmitted:
 			var err error
 			paymentState, err = o.handlePaymentSubmitted(ctx, requestContext, task, eventQueue, paymentState)

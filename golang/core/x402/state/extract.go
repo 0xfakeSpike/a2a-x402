@@ -27,7 +27,7 @@ import (
 func ExtractPaymentState(task *a2a.Task, message *a2a.Message) (*PaymentState, error) {
 	paymentState := &PaymentState{}
 
-	status, err := ExtractPaymentStatus(task, message)
+	status, err := ExtractPaymentStatus(task)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract payment status: %w", err)
 	}
@@ -54,16 +54,7 @@ func ExtractPaymentState(task *a2a.Task, message *a2a.Message) (*PaymentState, e
 	return paymentState, nil
 }
 
-func ExtractPaymentStatus(task *a2a.Task, message *a2a.Message) (PaymentStatus, error) {
-	if message != nil {
-		meta := message.Meta()
-		if meta != nil {
-			if statusStr, ok := meta[x402.MetadataKeyStatus].(string); ok {
-				return PaymentStatus(statusStr), nil
-			}
-		}
-	}
-
+func ExtractPaymentStatus(task *a2a.Task) (PaymentStatus, error) {
 	if task != nil && task.Status.Message != nil {
 		metadata := task.Status.Message.Meta()
 		if metadata != nil {
