@@ -60,8 +60,16 @@ func (c *Client) processPaymentState(
 			if err == nil {
 				return fmt.Errorf("payment failed: %s", string(msgJSON))
 			}
+			if task.Status.Message.Parts != nil {
+				for _, part := range task.Status.Message.Parts {
+					if textPart, ok := part.(a2a.TextPart); ok && textPart.Text != "" {
+						return fmt.Errorf("payment failed: %s", textPart.Text)
+					}
+				}
+			}
 		}
-		return nil
+		// If no message is available, return a generic error
+		return fmt.Errorf("payment failed")
 
 	default:
 		if task.Status.State == a2a.TaskStateWorking {
