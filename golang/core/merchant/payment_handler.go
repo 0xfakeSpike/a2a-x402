@@ -158,14 +158,14 @@ func (o *BusinessOrchestrator) handlePaymentVerified(
 		return nil, fmt.Errorf("prompt is required: original prompt not found in task metadata")
 	}
 
-	businessMessage, err := o.businessService.Execute(ctx, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("business logic execution failed: %w", err)
-	}
-
 	settleResponse, err := o.settlePayment(ctx, paymentState, matchedRequirement)
 	if err != nil {
 		return nil, err
+	}
+
+	businessMessage, err := o.businessService.Execute(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("business logic execution failed: %w", err)
 	}
 
 	return &state.PaymentState{

@@ -23,6 +23,33 @@ import (
 	"github.com/google-agentic-commerce/a2a-x402/core/x402/state"
 )
 
+// extractErrorMessage extracts an error message from task.Status.Message.
+// It first tries to find a text part in the message, and if that fails,
+// it falls back to marshaling the entire message to JSON.
+// Returns an empty string if no message can be extracted.
+func extractErrorMessage(task *a2a.Task) string {
+	if task.Status.Message == nil {
+		return ""
+	}
+
+	// First, try to extract text from message parts
+	if task.Status.Message.Parts != nil {
+		for _, part := range task.Status.Message.Parts {
+			if textPart, ok := part.(a2a.TextPart); ok && textPart.Text != "" {
+				return textPart.Text
+			}
+		}
+	}
+
+	// Fall back to JSON marshaling if no text part found
+	msgJSON, err := json.Marshal(task.Status.Message)
+	if err == nil {
+		return string(msgJSON)
+	}
+
+	return ""
+}
+
 func (c *Client) processPaymentState(
 	ctx context.Context,
 	task *a2a.Task,
@@ -55,36 +82,16 @@ func (c *Client) processPaymentState(
 		return nil
 
 	case state.PaymentFailed:
-		if task.Status.Message != nil {
-			msgJSON, err := json.Marshal(task.Status.Message)
-			if err == nil {
-				return fmt.Errorf("payment failed: %s", string(msgJSON))
-			}
-			if task.Status.Message.Parts != nil {
-				for _, part := range task.Status.Message.Parts {
-					if textPart, ok := part.(a2a.TextPart); ok && textPart.Text != "" {
-						return fmt.Errorf("payment failed: %s", textPart.Text)
-					}
-				}
-			}
+		if msg := extractErrorMessage(task); msg != "" {
+			return fmt.Errorf("payment failed: %s", msg)
 		}
 		// If no message is available, return a generic error
 		return fmt.Errorf("payment failed")
 
 	default:
 		if task.Status.State == a2a.TaskStateWorking {
-			if task.Status.Message != nil {
-				msgJSON, err := json.Marshal(task.Status.Message)
-				if err == nil {
-					return fmt.Errorf("unknown payment state: %s", string(msgJSON))
-				}
-				if task.Status.Message.Parts != nil {
-					for _, part := range task.Status.Message.Parts {
-						if textPart, ok := part.(a2a.TextPart); ok && textPart.Text != "" {
-							return fmt.Errorf("unknown payment state: %s", textPart.Text)
-						}
-					}
-				}
+			if msg := extractErrorMessage(task); msg != "" {
+				return fmt.Errorf("unknown payment state: %s", msg)
 			}
 			return fmt.Errorf("unknown payment state: %v (task is in working state)", paymentState.Status)
 		}

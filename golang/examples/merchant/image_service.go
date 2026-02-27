@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"google.golang.org/genai"
@@ -60,7 +61,10 @@ func (s *ImageService) Execute(ctx context.Context, prompt string) (string, erro
 		} else if part.InlineData != nil {
 			imageBytes := part.InlineData.Data
 			outputFilename := "./gemini_generated_image.png"
-			_ = os.WriteFile(outputFilename, imageBytes, 0644)
+			if err := os.WriteFile(outputFilename, imageBytes, 0644); err != nil {
+				log.Printf("failed to write image to file: %v", err)
+			}
+
 			imageBase64 = base64.StdEncoding.EncodeToString(imageBytes)
 		}
 	}
@@ -75,12 +79,12 @@ func (s *ImageService) Execute(ctx context.Context, prompt string) (string, erro
 		"prompt":  prompt,
 	}
 
-	if imageBase64 != "" {
-		imageDataURL := fmt.Sprintf("data:image/png;base64,%s", imageBase64)
-		response["url"] = imageDataURL
-	} else {
-		response["content"] = resultText
-	}
+	// if imageBase64 != "" {
+	// 	imageDataURL := fmt.Sprintf("data:image/png;base64,%s", imageBase64)
+	// 	response["url"] = imageDataURL
+	// } else {
+	// 	response["content"] = resultText
+	// }
 
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
