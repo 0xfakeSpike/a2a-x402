@@ -18,10 +18,10 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	x402core "github.com/coinbase/x402/go"
-	x402types "github.com/coinbase/x402/go/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/utils"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402"
+	x402core "github.com/x402-foundation/x402/go"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 func ExtractPaymentState(task *a2a.Task, message *a2a.Message) (*PaymentState, error) {
@@ -30,6 +30,13 @@ func ExtractPaymentState(task *a2a.Task, message *a2a.Message) (*PaymentState, e
 	status, err := ExtractPaymentStatus(task)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract payment status: %w", err)
+	}
+	messageStatus, err := ExtractPaymentStatusFromMessage(message)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract message payment status: %w", err)
+	}
+	if messageStatus == PaymentSubmitted {
+		status = messageStatus
 	}
 	paymentState.Status = status
 
@@ -82,6 +89,24 @@ func ExtractPaymentStatusFromTask(task *a2a.Task) (PaymentStatus, error) {
 	}
 
 	statusValue, ok := meta[x402.MetadataKeyStatus].(string)
+	if !ok {
+		return "", nil
+	}
+
+	status := PaymentStatus(statusValue)
+	if !status.IsValid() {
+		return "", nil
+	}
+
+	return status, nil
+}
+
+func ExtractPaymentStatusFromMessage(message *a2a.Message) (PaymentStatus, error) {
+	if message == nil || message.Meta() == nil {
+		return "", nil
+	}
+
+	statusValue, ok := message.Meta()[x402.MetadataKeyStatus].(string)
 	if !ok {
 		return "", nil
 	}

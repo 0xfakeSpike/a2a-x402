@@ -18,15 +18,15 @@ import (
 	"context"
 	"fmt"
 
-	x402 "github.com/coinbase/x402/go"
-	x402core "github.com/coinbase/x402/go"
-	x402http "github.com/coinbase/x402/go/http"
-	evm "github.com/coinbase/x402/go/mechanisms/evm/exact/server"
-	svm "github.com/coinbase/x402/go/mechanisms/svm/exact/server"
-	x402types "github.com/coinbase/x402/go/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/business"
 	"github.com/google-agentic-commerce/a2a-x402/core/types"
 	x402pkg "github.com/google-agentic-commerce/a2a-x402/core/x402"
+	x402 "github.com/x402-foundation/x402/go"
+	x402core "github.com/x402-foundation/x402/go"
+	x402http "github.com/x402-foundation/x402/go/http"
+	evm "github.com/x402-foundation/x402/go/mechanisms/evm/exact/server"
+	svm "github.com/x402-foundation/x402/go/mechanisms/svm/exact/server"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 func NewResourceServer(ctx context.Context, facilitatorURL string) (*x402.X402ResourceServer, error) {
@@ -77,7 +77,7 @@ func (w *resourceServerWrapper) VerifyPayment(ctx context.Context, payload x402t
 }
 
 func (w *resourceServerWrapper) SettlePayment(ctx context.Context, payload x402types.PaymentPayload, requirements x402types.PaymentRequirements) (*x402core.SettleResponse, error) {
-	return w.server.SettlePayment(ctx, payload, requirements)
+	return w.server.SettlePayment(ctx, payload, requirements, nil)
 }
 
 func BuildPaymentRequirements(
@@ -105,7 +105,6 @@ func BuildPaymentRequirements(
 
 	result := make([]*x402types.PaymentRequirements, 0, len(reqs))
 	for _, req := range reqs {
-		x402pkg.AddA2AFieldsToExtra(&req, params.Resource, params.Description, params.MimeType, nil)
 		result = append(result, &req)
 	}
 	return result, nil

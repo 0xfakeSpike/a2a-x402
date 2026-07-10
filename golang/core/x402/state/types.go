@@ -15,8 +15,9 @@
 package state
 
 import (
-	x402core "github.com/coinbase/x402/go"
-	x402types "github.com/coinbase/x402/go/types"
+	"github.com/a2aproject/a2a-go/a2a"
+	x402core "github.com/x402-foundation/x402/go"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 type PaymentStatus string
@@ -50,4 +51,5 @@ type PaymentState struct {
 	Requirements *x402types.PaymentRequired
 	Payload      *x402types.PaymentPayload
 	Receipts     []*x402core.SettleResponse
+	Artifacts    []*a2a.Artifact
 }

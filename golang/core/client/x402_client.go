@@ -19,15 +19,15 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	x402 "github.com/coinbase/x402/go"
-	evm "github.com/coinbase/x402/go/mechanisms/evm/exact/client"
-	svm "github.com/coinbase/x402/go/mechanisms/svm/exact/client"
-	evmsigners "github.com/coinbase/x402/go/signers/evm"
-	svmsigners "github.com/coinbase/x402/go/signers/svm"
-	x402types "github.com/coinbase/x402/go/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/types"
 	x402pkg "github.com/google-agentic-commerce/a2a-x402/core/x402"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402/state"
+	x402 "github.com/x402-foundation/x402/go"
+	evm "github.com/x402-foundation/x402/go/mechanisms/evm/exact/client"
+	svm "github.com/x402-foundation/x402/go/mechanisms/svm/exact/client"
+	evmsigners "github.com/x402-foundation/x402/go/signers/evm"
+	svmsigners "github.com/x402-foundation/x402/go/signers/svm"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 type X402Client struct {
@@ -48,7 +48,7 @@ func NewX402Client(networkKeyPairs []types.NetworkKeyPair) (*X402Client, error) 
 			if err != nil {
 				return nil, fmt.Errorf("failed to create EVM signer for network %s: %w", pair.NetworkName, err)
 			}
-			client.Register(x402.Network(pair.NetworkName), evm.NewExactEvmScheme(evmSigner))
+			client.Register(x402.Network(pair.NetworkName), evm.NewExactEvmScheme(evmSigner, nil))
 		case pair.NetworkName == x402pkg.NetworkSolanaMainnet || pair.NetworkName == x402pkg.NetworkSolanaDevnet || pair.NetworkName == x402pkg.NetworkSolanaTestnet:
 			svmSigner, err := svmsigners.NewClientSignerFromPrivateKey(pair.PrivateKey)
 			if err != nil {
@@ -69,8 +69,17 @@ func (c *X402Client) ProcessPaymentRequired(
 	taskID a2a.TaskID,
 	paymentRequired *x402types.PaymentRequired,
 ) (*a2a.Message, error) {
+	if paymentRequired == nil {
+		return nil, fmt.Errorf("payment requirements are required")
+	}
+	if paymentRequired.X402Version != x402pkg.X402Version {
+		return nil, fmt.Errorf("unsupported x402 version: %d", paymentRequired.X402Version)
+	}
 	if len(paymentRequired.Accepts) == 0 {
 		return nil, fmt.Errorf("no payment options available")
+	}
+	if paymentRequired.Resource == nil || paymentRequired.Resource.URL == "" {
+		return nil, fmt.Errorf("payment resource URL is required")
 	}
 
 	paymentRequirements, err := c.client.SelectPaymentRequirements(paymentRequired.Accepts)
@@ -78,20 +87,10 @@ func (c *X402Client) ProcessPaymentRequired(
 		return nil, fmt.Errorf("no matching payment option found: %w", err)
 	}
 
-	resource, description, mimeType, _ := x402pkg.A2AFieldsFromExtra(&paymentRequirements)
-	var resourceInfo *x402types.ResourceInfo
-	if resource != "" || description != "" || mimeType != "" {
-		resourceInfo = &x402types.ResourceInfo{
-			URL:         resource,
-			Description: description,
-			MimeType:    mimeType,
-		}
-	}
-
 	payload, err := c.client.CreatePaymentPayload(
 		ctx,
 		paymentRequirements,
-		resourceInfo,
+		paymentRequired.Resource,
 		nil,
 	)
 	if err != nil {

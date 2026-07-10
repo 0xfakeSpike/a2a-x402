@@ -18,9 +18,9 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	x402core "github.com/coinbase/x402/go"
-	x402types "github.com/coinbase/x402/go/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402"
+	x402core "github.com/x402-foundation/x402/go"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 func TestExtractPaymentStatus(t *testing.T) {
@@ -227,10 +227,10 @@ func TestExtractOriginalPrompt(t *testing.T) {
 
 func TestExtractPaymentPayload(t *testing.T) {
 	payload := &x402types.PaymentPayload{
-		X402Version: 1,
+		X402Version: x402.X402Version,
 		Accepted: x402types.PaymentRequirements{
 			Scheme:  "exact",
-			Network: "base-sepolia",
+			Network: x402.NetworkBaseSepolia,
 			Amount:  "100",
 			Asset:   "0x456",
 			PayTo:   "0x123",
@@ -297,10 +297,10 @@ func TestExtractPaymentPayload(t *testing.T) {
 					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: ""})},
 				}
 				otherPayload := &x402types.PaymentPayload{
-					X402Version: 2,
+					X402Version: x402.X402Version,
 					Accepted: x402types.PaymentRequirements{
 						Scheme:  "exact",
-						Network: "base-sepolia",
+						Network: x402.NetworkBaseSepolia,
 						Amount:  "200",
 					},
 				}
@@ -366,11 +366,11 @@ func TestExtractPaymentPayload(t *testing.T) {
 
 func TestExtractPaymentRequirements(t *testing.T) {
 	requirements := &x402types.PaymentRequired{
-		X402Version: 2,
+		X402Version: x402.X402Version,
 		Accepts: []x402types.PaymentRequirements{
 			{
 				Scheme:  "exact",
-				Network: "base-sepolia",
+				Network: x402.NetworkBaseSepolia,
 				PayTo:   "0x123",
 				Asset:   "0x456",
 			},
@@ -465,7 +465,7 @@ func TestExtractPaymentReceipts(t *testing.T) {
 	receipts := []*x402core.SettleResponse{
 		{
 			Success: true,
-			Network: "base-sepolia",
+			Network: x402.NetworkBaseSepolia,
 		},
 		{
 			Success: true,

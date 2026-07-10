@@ -20,12 +20,46 @@ package business
 
 import (
 	"context"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
-type BusinessService interface {
-	Execute(ctx context.Context, prompt string) (string, error)
+// Request describes a business invocation. Services are called once before
+// payment and again after the submitted payment has been verified.
+type Request struct {
+	Prompt          string
+	PaymentVerified bool
+}
 
-	ServiceRequirements(prompt string) ServiceRequirements
+// Result contains the business output that will be returned with the A2A task.
+type Result struct {
+	Message   string
+	Artifacts []*a2a.Artifact
+}
+
+type BusinessService interface {
+	Execute(ctx context.Context, request Request) (*Result, error)
+}
+
+// PaymentRequiredError is returned by a service when the current request must
+// be paid before execution can continue.
+type PaymentRequiredError struct {
+	Message      string
+	Requirements []ServiceRequirements
+}
+
+func NewPaymentRequiredError(message string, requirements ...ServiceRequirements) *PaymentRequiredError {
+	return &PaymentRequiredError{
+		Message:      message,
+		Requirements: requirements,
+	}
+}
+
+func (e *PaymentRequiredError) Error() string {
+	if e == nil || e.Message == "" {
+		return "payment required"
+	}
+	return e.Message
 }
 
 type ServiceRequirements struct {
@@ -41,7 +75,7 @@ type ServiceRequirements struct {
 	// MimeType is the MIME type of the resource (e.g., "application/json", "image/png")
 	MimeType string
 
-	// Scheme is the payment scheme (e.g., "exact", "at-least")
+	// Scheme is the payment scheme. This implementation currently registers "exact".
 	Scheme string
 
 	// MaxTimeoutSeconds is the maximum time in seconds before payment expires

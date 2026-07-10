@@ -21,7 +21,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/google-agentic-commerce/a2a-x402/core/business"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402/state"
+	x402core "github.com/x402-foundation/x402/go"
 )
 
 func (o *BusinessOrchestrator) createTask(
@@ -63,6 +65,18 @@ func (o *BusinessOrchestrator) transitionToPaymentRequired(
 	return queue.Write(ctx, event)
 }
 
+func (o *BusinessOrchestrator) transitionToWorking(
+	ctx context.Context,
+	requestContext *a2asrv.RequestContext,
+	task *a2a.Task,
+	queue eventqueue.Queue,
+) error {
+	task.Status.State = a2a.TaskStateWorking
+	event := a2a.NewStatusUpdateEvent(requestContext, a2a.TaskStateWorking, task.Status.Message)
+	event.Final = false
+	return queue.Write(ctx, event)
+}
+
 func (o *BusinessOrchestrator) transitionToCompleted(
 	ctx context.Context,
 	requestContext *a2asrv.RequestContext,
@@ -70,6 +84,10 @@ func (o *BusinessOrchestrator) transitionToCompleted(
 	queue eventqueue.Queue,
 	result *state.PaymentState,
 ) error {
+	if err := writeArtifacts(ctx, task, queue, result.Artifacts); err != nil {
+		return err
+	}
+
 	responseText := result.Message
 	if responseText == "" {
 		responseText = "Task completed"
@@ -87,6 +105,47 @@ func (o *BusinessOrchestrator) transitionToCompleted(
 	return queue.Write(ctx, event)
 }
 
+func (o *BusinessOrchestrator) transitionToBusinessCompleted(
+	ctx context.Context,
+	requestContext *a2asrv.RequestContext,
+	task *a2a.Task,
+	queue eventqueue.Queue,
+	result *business.Result,
+) error {
+	if result == nil {
+		return fmt.Errorf("business result is required")
+	}
+	if err := writeArtifacts(ctx, task, queue, result.Artifacts); err != nil {
+		return err
+	}
+
+	responseText := result.Message
+	if responseText == "" {
+		responseText = "Task completed"
+	}
+	task.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: responseText})
+	task.Status.State = a2a.TaskStateCompleted
+
+	event := a2a.NewStatusUpdateEvent(requestContext, a2a.TaskStateCompleted, task.Status.Message)
+	event.Final = true
+	return queue.Write(ctx, event)
+}
+
+func (o *BusinessOrchestrator) transitionToTaskFailed(
+	ctx context.Context,
+	requestContext *a2asrv.RequestContext,
+	task *a2a.Task,
+	queue eventqueue.Queue,
+	err error,
+) error {
+	task.Status.State = a2a.TaskStateFailed
+	task.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: err.Error()})
+
+	event := a2a.NewStatusUpdateEvent(requestContext, a2a.TaskStateFailed, task.Status.Message)
+	event.Final = true
+	return queue.Write(ctx, event)
+}
+
 func (o *BusinessOrchestrator) transitionToFailed(
 	ctx context.Context,
 	requestContext *a2asrv.RequestContext,
@@ -94,10 +153,13 @@ func (o *BusinessOrchestrator) transitionToFailed(
 	queue eventqueue.Queue,
 	err error,
 	errorCode string,
+	receipt *x402core.SettleResponse,
 ) error {
 	task.Status.State = a2a.TaskStateFailed
 
-	state.RecordPaymentFailed(task, errorCode, err.Error())
+	if recordErr := state.RecordPaymentFailed(task, errorCode, err.Error(), receipt); recordErr != nil {
+		return fmt.Errorf("failed to record payment failure: %w", recordErr)
+	}
 
 	event := a2a.NewStatusUpdateEvent(requestContext, a2a.TaskStateFailed, task.Status.Message)
 	event.Final = true
@@ -112,6 +174,7 @@ func (o *BusinessOrchestrator) transitionToPaymentVerified(
 	queue eventqueue.Queue,
 	paymentState *state.PaymentState,
 ) error {
+	task.Status.State = a2a.TaskStateWorking
 	if err := state.RecordPaymentVerified(task, paymentState, "Payment verified"); err != nil {
 		return fmt.Errorf("failed to record payment verified: %w", err)
 	}
@@ -120,4 +183,30 @@ func (o *BusinessOrchestrator) transitionToPaymentVerified(
 	event.Final = false
 
 	return queue.Write(ctx, event)
+}
+
+func writeArtifacts(
+	ctx context.Context,
+	task *a2a.Task,
+	queue eventqueue.Queue,
+	artifacts []*a2a.Artifact,
+) error {
+	for _, artifact := range artifacts {
+		if artifact == nil {
+			continue
+		}
+		if artifact.ID == "" {
+			artifact.ID = a2a.NewArtifactID()
+		}
+		event := &a2a.TaskArtifactUpdateEvent{
+			TaskID:    task.ID,
+			ContextID: task.ContextID,
+			Artifact:  artifact,
+			LastChunk: true,
+		}
+		if err := queue.Write(ctx, event); err != nil {
+			return fmt.Errorf("failed to write artifact event: %w", err)
+		}
+	}
+	return nil
 }

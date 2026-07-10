@@ -20,37 +20,61 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google-agentic-commerce/a2a-x402/core/x402/state"
 )
+
+const defaultTaskPollInterval = 500 * time.Millisecond
 
 // WaitForCompletion starts a task by sending a message and waits for it to reach a terminal state.
 func (c *Client) WaitForCompletion(ctx context.Context, messageText string) (*a2a.Task, error) {
-
 	message := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: messageText})
-	task, _, err := SendMessage(ctx, c.client, message)
+	task, directMessage, err := SendMessage(ctx, c.client, message)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
+	if task == nil {
+		if directMessage != nil {
+			return nil, fmt.Errorf("merchant returned a direct message; a task response is required")
+		}
+		return nil, fmt.Errorf("merchant returned no task")
+	}
 
+	paymentSubmitted := false
 	for {
-		task, err = c.client.GetTask(ctx, &a2a.TaskQueryParams{
-			ID: task.ID,
-		})
+		paymentStatus, err := state.ExtractPaymentStatusFromTask(task)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get task: %w", err)
+			return nil, fmt.Errorf("failed to extract payment status: %w", err)
+		}
+		if paymentStatus != state.PaymentRequired {
+			paymentSubmitted = false
 		}
 
-		if err := c.processPaymentState(ctx, task); err != nil {
+		updatedTask, submitted, err := c.processPaymentState(ctx, task, !paymentSubmitted)
+		if err != nil {
 			return nil, fmt.Errorf("failed to process payment state: %w", err)
+		}
+		task = updatedTask
+		if submitted {
+			paymentSubmitted = true
 		}
 
 		if task.Status.State.Terminal() {
 			return task, nil
 		}
 
+		pollInterval := c.pollInterval
+		if pollInterval <= 0 {
+			pollInterval = defaultTaskPollInterval
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(pollInterval):
+		}
+
+		task, err = c.client.GetTask(ctx, &a2a.TaskQueryParams{ID: task.ID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get task: %w", err)
 		}
 	}
 }

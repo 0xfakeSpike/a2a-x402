@@ -18,9 +18,9 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2asrv"
-	x402 "github.com/coinbase/x402/go"
-	x402core "github.com/coinbase/x402/go"
-	x402types "github.com/coinbase/x402/go/types"
+	x402 "github.com/x402-foundation/x402/go"
+	x402core "github.com/x402-foundation/x402/go"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 // ResourceServer abstracts the x402 resource server operations

@@ -5,8 +5,10 @@ This is the Go implementation of the x402 payment protocol extension for A2A (Ag
 ## Features
 
 - **x402 v2 Support**: This implementation uses x402 protocol version 2
+- Dynamic payment requirements using the same execute-and-request-payment model as the Python implementation
 - Payment verification and settlement
 - Support for multiple blockchain networks (EVM and Solana)
+- Structured A2A artifact results
 - Merchant and client examples included
 
 ## Requirements
@@ -90,4 +92,29 @@ The client requires a configuration file with network key pairs:
 ## x402 Protocol Version
 
 This implementation uses **x402 protocol version 2** (`X402Version: 2`), which is set in the payment requirements when creating payment requests.
+It declares the A2A x402 v0.2 extension URI and rejects v1 payment envelopes.
+It targets the current `github.com/x402-foundation/x402/go` API and accepts only CAIP-2 network identifiers and the v2 top-level `resource` object. Legacy network aliases and resource fields embedded in payment requirement `extra` are not supported.
 
+## Business Service Model
+
+Business services are invoked once before payment. They can either return a result immediately for a free request, or return `business.PaymentRequiredError` with dynamic payment terms. After the client submits a valid payment, the service is invoked again with `PaymentVerified: true`.
+
+```go
+func (s *Service) Execute(ctx context.Context, request business.Request) (*business.Result, error) {
+	if !request.PaymentVerified {
+		terms := business.ServiceRequirements{
+			Price:             "1.00",
+			Resource:          "/service",
+			Description:       "Paid service",
+			MimeType:          "application/json",
+			Scheme:            "exact",
+			MaxTimeoutSeconds: 600,
+		}
+		return nil, business.NewPaymentRequiredError("Payment required", terms)
+	}
+
+	return &business.Result{Message: "Service completed"}, nil
+}
+```
+
+`business.Result.Artifacts` can contain A2A text, data, or file parts. These artifacts are emitted before the final completed task update.

@@ -46,7 +46,7 @@ func NewServerHandler(ctx context.Context, facilitatorURL string, networkConfigs
 		URL:                "http://localhost:8080/rpc",
 		PreferredTransport: a2a.TransportProtocolJSONRPC,
 		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		DefaultOutputModes: []string{"text", "image/png"},
 		Capabilities: a2a.AgentCapabilities{
 			Extensions: []a2a.AgentExtension{
 				{

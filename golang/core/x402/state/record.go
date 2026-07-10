@@ -15,9 +15,12 @@
 package state
 
 import (
+	"fmt"
+
 	"github.com/a2aproject/a2a-go/a2a"
-	x402core "github.com/coinbase/x402/go"
-	x402types "github.com/coinbase/x402/go/types"
+	"github.com/google-agentic-commerce/a2a-x402/core/x402"
+	x402core "github.com/x402-foundation/x402/go"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 func RecordPaymentRequired(task *a2a.Task, requirements *x402types.PaymentRequired, defaultText string) error {
@@ -71,13 +74,31 @@ func RecordPaymentCompleted(task *a2a.Task, receipts []*x402core.SettleResponse,
 	return nil
 }
 
-func RecordPaymentFailed(task *a2a.Task, errorCode string, defaultText string) {
+func RecordPaymentFailed(task *a2a.Task, errorCode string, defaultText string, receipt *x402core.SettleResponse) error {
+	if receipt == nil {
+		return fmt.Errorf("failed payment receipt is required")
+	}
 	if task.Status.Message == nil {
 		if defaultText == "" {
 			defaultText = "Payment failed"
 		}
 		task.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: defaultText})
 	}
+	if defaultText != "" {
+		var newParts []a2a.Part
+		for _, part := range task.Status.Message.Parts {
+			if _, isTextPart := part.(a2a.TextPart); !isTextPart {
+				newParts = append(newParts, part)
+			}
+		}
+		newParts = append(newParts, a2a.TextPart{Text: defaultText})
+		task.Status.Message.Parts = newParts
+	}
 	SetPaymentStatus(task.Status.Message, PaymentFailed)
 	SetPaymentError(task.Status.Message, errorCode)
+	if err := SetPaymentReceipts(task.Status.Message, []*x402core.SettleResponse{receipt}); err != nil {
+		return err
+	}
+	delete(task.Status.Message.Metadata, x402.MetadataKeyPayload)
+	return nil
 }

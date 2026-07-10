@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	"google.golang.org/genai"
 
 	"github.com/google-agentic-commerce/a2a-x402/core/business"
@@ -29,13 +29,18 @@ func NewImageService() *ImageService {
 	}
 }
 
-func (s *ImageService) Execute(ctx context.Context, prompt string) (string, error) {
+func (s *ImageService) Execute(ctx context.Context, request business.Request) (*business.Result, error) {
+	prompt := request.Prompt
 	if prompt == "" {
-		return "", fmt.Errorf("prompt cannot be empty")
+		return nil, fmt.Errorf("prompt cannot be empty")
+	}
+	if !request.PaymentVerified {
+		requirements := s.ServiceRequirements(prompt)
+		return nil, business.NewPaymentRequiredError(requirements.Description, requirements)
 	}
 
 	if s.client == nil {
-		return "", fmt.Errorf("genai client is not initialized. Please set GEMINI_API_KEY environment variable")
+		return nil, fmt.Errorf("genai client is not initialized. Please set GEMINI_API_KEY environment variable")
 	}
 
 	result, err := s.client.Models.GenerateContent(
@@ -45,19 +50,18 @@ func (s *ImageService) Execute(ctx context.Context, prompt string) (string, erro
 		nil,
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate image: %w", err)
+		return nil, fmt.Errorf("failed to generate image: %w", err)
 	}
 
 	if len(result.Candidates) == 0 {
-		return "", fmt.Errorf("no candidates in result")
+		return nil, fmt.Errorf("no candidates in result")
 	}
 
-	var imageBase64 string
-	var resultText string
+	artifactParts := make([]a2a.Part, 0)
 
 	for _, part := range result.Candidates[0].Content.Parts {
 		if part.Text != "" {
-			resultText = part.Text
+			artifactParts = append(artifactParts, a2a.TextPart{Text: part.Text})
 		} else if part.InlineData != nil {
 			imageBytes := part.InlineData.Data
 			outputFilename := "./gemini_generated_image.png"
@@ -65,33 +69,36 @@ func (s *ImageService) Execute(ctx context.Context, prompt string) (string, erro
 				log.Printf("failed to write image to file: %v", err)
 			}
 
-			imageBase64 = base64.StdEncoding.EncodeToString(imageBytes)
+			mimeType := part.InlineData.MIMEType
+			if mimeType == "" {
+				mimeType = "image/png"
+			}
+			artifactParts = append(artifactParts, a2a.FilePart{
+				File: a2a.FileBytes{
+					FileMeta: a2a.FileMeta{
+						Name:     "gemini_generated_image.png",
+						MimeType: mimeType,
+					},
+					Bytes: base64.StdEncoding.EncodeToString(imageBytes),
+				},
+			})
 		}
 	}
 
-	if imageBase64 == "" && resultText == "" {
-		return "", fmt.Errorf("no image or text data found in result")
+	if len(artifactParts) == 0 {
+		return nil, fmt.Errorf("no image or text data found in result")
 	}
 
-	response := map[string]interface{}{
-		"status":  "success",
-		"message": "Image generated successfully",
-		"prompt":  prompt,
-	}
-
-	// if imageBase64 != "" {
-	// 	imageDataURL := fmt.Sprintf("data:image/png;base64,%s", imageBase64)
-	// 	response["url"] = imageDataURL
-	// } else {
-	// 	response["content"] = resultText
-	// }
-
-	jsonResponse, err := json.Marshal(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal response: %w", err)
-	}
-
-	return string(jsonResponse), nil
+	return &business.Result{
+		Message: "Image generated successfully",
+		Artifacts: []*a2a.Artifact{
+			{
+				Name:        "generated-image",
+				Description: fmt.Sprintf("Generated image for prompt: %s", prompt),
+				Parts:       artifactParts,
+			},
+		},
+	}, nil
 }
 
 func (s *ImageService) ServiceRequirements(prompt string) business.ServiceRequirements {
@@ -114,7 +121,7 @@ func (s *ImageService) ServiceRequirements(prompt string) business.ServiceRequir
 		Price:             priceStr,
 		Resource:          "/generate-image",
 		Description:       description,
-		MimeType:          "application/json",
+		MimeType:          "image/png",
 		Scheme:            "exact",
 		MaxTimeoutSeconds: 600,
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
+	x402pkg "github.com/google-agentic-commerce/a2a-x402/core/x402"
 )
 
 func NewA2AClient(ctx context.Context, merchantURL string) (*a2aclient.Client, error) {
@@ -33,8 +34,8 @@ func NewA2AClient(ctx context.Context, merchantURL string) (*a2aclient.Client, e
 	}
 
 	extensionURIs := extractExtensionURIs(agentCard)
-	if len(extensionURIs) == 0 {
-		return nil, fmt.Errorf("no extensions found in AgentCard")
+	if !containsExtensionURI(extensionURIs, x402pkg.X402ExtensionURI) {
+		return nil, fmt.Errorf("merchant does not advertise the required x402 extension: %s", x402pkg.X402ExtensionURI)
 	}
 
 	factory := a2aclient.NewFactory(
@@ -81,6 +82,9 @@ func fetchAgentCard(ctx context.Context, url string) (*a2a.AgentCard, error) {
 }
 
 func extractExtensionURIs(agentCard *a2a.AgentCard) []string {
+	if agentCard == nil {
+		return nil
+	}
 	extensions := agentCard.Capabilities.Extensions
 	uris := make([]string, 0, len(extensions))
 	for _, ext := range extensions {
@@ -91,6 +95,15 @@ func extractExtensionURIs(agentCard *a2a.AgentCard) []string {
 	return uris
 }
 
+func containsExtensionURI(extensionURIs []string, target string) bool {
+	for _, uri := range extensionURIs {
+		if uri == target {
+			return true
+		}
+	}
+	return false
+}
+
 func determineRPCEndpoint(merchantURL string, agentCard *a2a.AgentCard) string {
 	if agentCard.URL != "" && agentCard.PreferredTransport == a2a.TransportProtocolJSONRPC {
 		return agentCard.URL
@@ -98,7 +111,13 @@ func determineRPCEndpoint(merchantURL string, agentCard *a2a.AgentCard) string {
 	return merchantURL + "/rpc"
 }
 
-func SendMessage(ctx context.Context, client *a2aclient.Client, message *a2a.Message) (*a2a.Task, *a2a.Message, error) {
+func SendMessage(ctx context.Context, client messageClient, message *a2a.Message) (*a2a.Task, *a2a.Message, error) {
+	if client == nil {
+		return nil, nil, fmt.Errorf("a2a client is required")
+	}
+	if message == nil {
+		return nil, nil, fmt.Errorf("message is required")
+	}
 	messageParams := &a2a.MessageSendParams{
 		Message: message,
 	}

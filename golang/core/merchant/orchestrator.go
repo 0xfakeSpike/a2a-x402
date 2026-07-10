@@ -16,6 +16,7 @@ package merchant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -89,15 +90,37 @@ func (o *BusinessOrchestrator) Execute(
 			return err
 		}
 	}
+	if task == nil {
+		return fmt.Errorf("stored task is required for task %s", requestContext.Message.TaskID)
+	}
 
 	if err := o.ensureExtension(ctx, requestContext, task, eventQueue); err != nil {
 		return err
 	}
+	if task.Status.State == a2a.TaskStateFailed || task.Status.State == a2a.TaskStateCompleted {
+		return nil
+	}
 
 	paymentState, err := state.ExtractPaymentState(task, message)
 	if err != nil {
-		return o.transitionToFailed(ctx, requestContext, task, eventQueue,
-			fmt.Errorf("failed to extract payment state: %w", err), "state_extraction_failed")
+		if hasPaymentMetadata(task, message) {
+			partialState := &state.PaymentState{}
+			partialState.Requirements, _ = state.ExtractPaymentRequirements(task)
+			partialState.Payload, _ = state.ExtractPaymentPayload(task, message)
+			_, failureErr := o.failPayment(
+				ctx,
+				requestContext,
+				task,
+				eventQueue,
+				partialState,
+				fmt.Errorf("failed to extract payment state: %w", err),
+				x402.ErrorCodeInvalidSignature,
+				nil,
+			)
+			return failureErr
+		}
+		return o.transitionToTaskFailed(ctx, requestContext, task, eventQueue,
+			fmt.Errorf("failed to extract payment state: %w", err))
 	}
 
 	for {
@@ -115,6 +138,9 @@ func (o *BusinessOrchestrator) Execute(
 				var err error
 				paymentState, err = o.handlePaymentSubmitted(ctx, requestContext, task, eventQueue, paymentState)
 				if err != nil {
+					if task.Status.State == a2a.TaskStateFailed {
+						return nil
+					}
 					return err
 				}
 				continue
@@ -125,15 +151,17 @@ func (o *BusinessOrchestrator) Execute(
 			var err error
 			paymentState, err = o.handlePaymentSubmitted(ctx, requestContext, task, eventQueue, paymentState)
 			if err != nil {
+				if task.Status.State == a2a.TaskStateFailed {
+					return nil
+				}
 				return err
 			}
 
 		case state.PaymentVerified:
 			var err error
-			paymentState, err = o.handlePaymentVerified(ctx, task, paymentState)
+			paymentState, err = o.handlePaymentVerified(ctx, requestContext, task, eventQueue, paymentState)
 			if err != nil {
-				return o.transitionToFailed(ctx, requestContext, task, eventQueue,
-					fmt.Errorf("business execution failed: %w", err), "business_execution_failed")
+				return err
 			}
 
 		case state.PaymentCompleted:
@@ -141,14 +169,48 @@ func (o *BusinessOrchestrator) Execute(
 
 		default:
 			prompt := state.ExtractMessageText(message)
-			paymentState, err := o.buildPaymentRequirements(ctx, prompt)
+			if err := o.transitionToWorking(ctx, requestContext, task, eventQueue); err != nil {
+				return err
+			}
+			businessResult, businessErr := o.businessService.Execute(ctx, business.Request{Prompt: prompt})
+			if businessErr == nil {
+				return o.transitionToBusinessCompleted(ctx, requestContext, task, eventQueue, businessResult)
+			}
+
+			var paymentRequired *business.PaymentRequiredError
+			if !errors.As(businessErr, &paymentRequired) {
+				return o.transitionToTaskFailed(ctx, requestContext, task, eventQueue,
+					fmt.Errorf("business execution failed: %w", businessErr))
+			}
+
+			paymentState, err := o.buildPaymentRequirements(ctx, paymentRequired)
 			if err != nil {
-				return o.transitionToFailed(ctx, requestContext, task, eventQueue,
-					fmt.Errorf("failed to create payment requirements: %w", err), "payment_requirements_creation_failed")
+				return o.transitionToTaskFailed(ctx, requestContext, task, eventQueue,
+					fmt.Errorf("failed to create payment requirements: %w", err))
 			}
 			return o.transitionToPaymentRequired(ctx, requestContext, task, eventQueue, paymentState)
 		}
 	}
+}
+
+func hasPaymentMetadata(task *a2a.Task, message *a2a.Message) bool {
+	var taskMessage *a2a.Message
+	if task != nil {
+		taskMessage = task.Status.Message
+	}
+	for _, candidate := range []*a2a.Message{message, taskMessage} {
+		if candidate == nil || candidate.Meta() == nil {
+			continue
+		}
+		metadata := candidate.Meta()
+		if _, ok := metadata[x402.MetadataKeyStatus]; ok {
+			return true
+		}
+		if _, ok := metadata[x402.MetadataKeyPayload]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (o *BusinessOrchestrator) Cancel(
@@ -172,7 +234,7 @@ func (o *BusinessOrchestrator) ensureExtension(
 	if !ok {
 		errorMsg := "x402 extension is required but not active. Client must send X-A2A-Extensions header with value: " + x402.X402ExtensionURI
 		err := fmt.Errorf("%s", errorMsg)
-		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, err, "extension_missing"); transitionErr != nil {
+		if transitionErr := o.transitionToTaskFailed(ctx, requestContext, task, eventQueue, err); transitionErr != nil {
 			return fmt.Errorf("failed to transition to failed state: %w", transitionErr)
 		}
 		return err
@@ -184,7 +246,7 @@ func (o *BusinessOrchestrator) ensureExtension(
 	if !extensions.Requested(x402Extension) {
 		errorMsg := "x402 extension is required but not active. Client must send X-A2A-Extensions header with value: " + x402.X402ExtensionURI
 		err := fmt.Errorf("%s", errorMsg)
-		if transitionErr := o.transitionToFailed(ctx, requestContext, task, eventQueue, err, "extension_not_requested"); transitionErr != nil {
+		if transitionErr := o.transitionToTaskFailed(ctx, requestContext, task, eventQueue, err); transitionErr != nil {
 			return fmt.Errorf("failed to transition to failed state: %w", transitionErr)
 		}
 		return err

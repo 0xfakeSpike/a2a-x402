@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	x402types "github.com/coinbase/x402/go/types"
 	"github.com/google-agentic-commerce/a2a-x402/core/utils"
 	"github.com/google-agentic-commerce/a2a-x402/core/x402"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 func EncodePaymentSubmission(

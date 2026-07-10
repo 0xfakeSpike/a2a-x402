@@ -15,11 +15,12 @@
 package x402
 
 import (
-	svm "github.com/coinbase/x402/go/mechanisms/svm"
+	svm "github.com/x402-foundation/x402/go/mechanisms/svm"
 )
 
 const (
 	X402ExtensionURI = "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2"
+	X402Version      = 2
 )
 
 const (
@@ -39,17 +40,12 @@ const (
 	MetadataKeyOriginalPrompt = "x402.payment.original_prompt"
 )
 
-// NormalizeNetwork converts network aliases to CAIP-2 format.
-// This ensures compatibility between different network identifier formats
-// (e.g., "base-sepolia" -> "eip155:84532").
-func NormalizeNetwork(network string) string {
-	switch network {
-	case "base":
-		return NetworkBase
-	case "base-sepolia":
-		return NetworkBaseSepolia
-	default:
-		// If already in CAIP-2 format or unknown, return as-is
-		return network
-	}
-}
+const (
+	ErrorCodeInsufficientFunds = "INSUFFICIENT_FUNDS"
+	ErrorCodeInvalidSignature  = "INVALID_SIGNATURE"
+	ErrorCodeExpiredPayment    = "EXPIRED_PAYMENT"
+	ErrorCodeDuplicateNonce    = "DUPLICATE_NONCE"
+	ErrorCodeNetworkMismatch   = "NETWORK_MISMATCH"
+	ErrorCodeInvalidAmount     = "INVALID_AMOUNT"
+	ErrorCodeSettlementFailed  = "SETTLEMENT_FAILED"
+)
